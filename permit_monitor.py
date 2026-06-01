@@ -247,7 +247,7 @@ def run_check() -> bool:
 
     result = parse_availability(html)
 
-    if True:
+    if result["available"]:
         log.info("✅  PERMIT AVAILABLE — signals: %s", result["matched_signals"])
         if result["matched_keywords"]:
             log.info("    Keyword matches: %s", result["matched_keywords"])
