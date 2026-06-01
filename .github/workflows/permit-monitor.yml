@@ -37,7 +37,7 @@ name: Permit Monitor
 
 on:
   schedule:
-    - cron: "0 */3 * * *"   # every 3 hours (UTC)
+    - cron: "0 */4 * * *"   # every 3 hours (UTC)
   workflow_dispatch:         # allows manual trigger from Actions tab
 
 jobs:
@@ -51,11 +51,11 @@ jobs:
       SMTP_PASS:    ${{ secrets.SMTP_PASS }}
       ALERT_EMAIL:  ${{ secrets.ALERT_EMAIL }}
       # Optional: uncomment and set your season window
-      # SEASON_START: "2025-03-01"
-      # SEASON_END:   "2025-10-31"
+       SEASON_START: "2026-07-01"
+       SEASON_END:   "2026-08-15"
       # Optional: only alert if these keywords appear on the page
       # KEYWORDS: "Rogue,Selway,October"
-      INTERVAL_HOURS: "3"
+      INTERVAL_HOURS: "4"
 
     steps:
       - name: Check out repo
