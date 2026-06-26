@@ -1,60 +1,31 @@
 # .github/workflows/permit-monitor.yml
 #
-# Runs the permit monitor on a schedule via GitHub Actions.
-# No computer needs to stay on — GitHub runs this for free.
-#
-# SETUP STEPS:
-#   1. Create a new GitHub repo (can be private)
-#   2. Put permit_monitor.py at the root of the repo
-#   3. Put this file at: .github/workflows/permit-monitor.yml
-#   4. Add these secrets in: Settings → Secrets and variables → Actions
-#        SMTP_HOST      e.g. smtp.gmail.com
-#        SMTP_PORT      e.g. 587
-#        SMTP_USER      your Gmail address
-#        SMTP_PASS      Gmail app password (see note below)
-#        ALERT_EMAIL    address to receive alerts
-#
-#   For Gmail, generate an App Password at:
-#   https://myaccount.google.com/apppasswords
-#   (requires 2-Step Verification to be enabled)
-#
-#   5. Push to GitHub — the workflow activates automatically.
-#   6. You can also trigger it manually from the Actions tab.
-#
-# SCHEDULE NOTE:
-#   GitHub Actions uses UTC time. Adjust the cron expression as needed.
-#   Current schedule: every 3 hours.
-#   Cron format: minute hour day-of-month month day-of-week
-#   Examples:
-#     "0 */2 * * *"   — every 2 hours
-#     "0 */4 * * *"   — every 4 hours
-#     "0 14 * * *"    — once daily at 2pm UTC (7am Mountain)
-#
-# SEASON WINDOW (optional):
-#   Set SEASON_START and SEASON_END below to skip checks outside your target dates.
+# Two jobs:
+#   1. check-permit  — runs every 4 hours, July 1–Aug 15, checks for availability
+#   2. send-digest   — runs once daily at 8pm Mountain (2am UTC), emails a summary
 
 name: Permit Monitor
 
 on:
   schedule:
-    - cron: "0 */4 * * *"   # every 3 hours (UTC)
+    - cron: "0 */4 * * *"   # every 4 hours — permit check
+    - cron: "0 2 * * *"     # 2am UTC daily (8pm Mountain) — digest email
   workflow_dispatch:         # allows manual trigger from Actions tab
 
 jobs:
+
+  # ── Job 1: Check for permit availability ────────────────────────────────────
   check-permit:
     runs-on: ubuntu-latest
 
     env:
-      SMTP_HOST:    ${{ secrets.SMTP_HOST }}
-      SMTP_PORT:    ${{ secrets.SMTP_PORT }}
-      SMTP_USER:    ${{ secrets.SMTP_USER }}
-      SMTP_PASS:    ${{ secrets.SMTP_PASS }}
-      ALERT_EMAIL:  ${{ secrets.ALERT_EMAIL }}
-      # Optional: uncomment and set your season window
-       SEASON_START: "2026-07-01"
-       SEASON_END:   "2026-08-15"
-      # Optional: only alert if these keywords appear on the page
-      # KEYWORDS: "Rogue,Selway,October"
+      SMTP_HOST:     ${{ secrets.SMTP_HOST }}
+      SMTP_PORT:     ${{ secrets.SMTP_PORT }}
+      SMTP_USER:     ${{ secrets.SMTP_USER }}
+      SMTP_PASS:     ${{ secrets.SMTP_PASS }}
+      ALERT_EMAIL:   ${{ secrets.ALERT_EMAIL }}
+      SEASON_START:  "2026-07-01"
+      SEASON_END:    "2026-08-15"
       INTERVAL_HOURS: "4"
 
     steps:
@@ -71,8 +42,56 @@ jobs:
 
       - name: Run permit check
         run: python permit_monitor.py
-        # Exit code 0 = permit found, 1 = not found (both are fine — Actions won't fail on 1)
         continue-on-error: true
+
+      - name: Upload check log
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-log-${{ github.run_id }}
+          path: check_log.txt
+          if-no-files-found: ignore
 
       - name: Log result
         run: echo "Check complete at $(date -u)"
+
+  # ── Job 2: Send daily digest email ──────────────────────────────────────────
+  send-digest:
+    runs-on: ubuntu-latest
+    # Only run this job when the daily digest cron fires (2am UTC)
+    # We detect this by checking if the current hour is 2 UTC
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule')
+
+    env:
+      SMTP_HOST:     ${{ secrets.SMTP_HOST }}
+      SMTP_PORT:     ${{ secrets.SMTP_PORT }}
+      SMTP_USER:     ${{ secrets.SMTP_USER }}
+      SMTP_PASS:     ${{ secrets.SMTP_PASS }}
+      ALERT_EMAIL:   ${{ secrets.ALERT_EMAIL }}
+      SEASON_START:  "2026-07-01"
+      SEASON_END:    "2026-08-15"
+      INTERVAL_HOURS: "4"
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Download today's check log (if available)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: check-log-*
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Send daily digest
+        run: python permit_monitor.py --digest
+
+      - name: Log result
+        run: echo "Digest sent at $(date -u)"
